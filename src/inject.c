@@ -16,12 +16,11 @@
 #include "inject.h"
 #include "remote.h"
 
-#define INSTRUCTION_OFFSET 0x28
-#define ORIGINAL_FUNCTION_OFFSET 0x0
-#define PLT_ENTRY_ADDRESS_OFFSET 0x8
-#define GOT_ENTRY_ADDRESS_OFFSET 0x10
-#define HOOK_ADDRESS_OFFSET 0x18
-#define SCRATCH_PAD_OFFSET 0x20
+#define INSTRUCTION_OFFSET 0x20
+#define PLT_ENTRY_ADDRESS_OFFSET 0x0
+#define GOT_ENTRY_ADDRESS_OFFSET 0x8
+#define HOOK_ADDRESS_OFFSET 0x10
+#define SCRATCH_PAD_OFFSET 0x18
 
 struct hook_function {
     uint8_t* ins;

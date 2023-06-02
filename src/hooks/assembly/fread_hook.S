@@ -5,8 +5,6 @@ SECTION .text           ; Code section.
 ; The following dq pseudo-instructions are here to reserve space.
 ; These memory locations will be patched by Xplore such that they contain the correct information
 ; after the hook is injected.
-original_function_address:
-    dq 0x0 ; Cache where original function address will be stored.
 plt_entry_address:
     dq 0x0 ; Address of corresponding .plt entry.
 got_entry_address:
@@ -150,6 +148,8 @@ print:
     mov rdx, rax
     call write
     ret
+original_function_address:
+    dq 0x0 ; Cache where original function address will be stored.
 local_fread_buffer:
     dq 0x0 ; Location where the char* pointer passed to fread is stored. 
 str_prologue:
