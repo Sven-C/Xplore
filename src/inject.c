@@ -17,11 +17,14 @@
 #include "io_utils.h"
 #include "remote.h"
 
-#define INSTRUCTION_OFFSET 0x20
+#define ORIGINAL_FUNCTION_OFFSET 0x0
+#define SCRATCH_PAD_OFFSET 0x08
+#define INSTRUCTION_OFFSET 0x10
+
 #define PLT_ENTRY_ADDRESS_OFFSET 0x0
-#define GOT_ENTRY_ADDRESS_OFFSET 0x8
+#define GOT_ENTRY_ADDRESS_OFFSET 0x08
 #define HOOK_ADDRESS_OFFSET 0x10
-#define SCRATCH_PAD_OFFSET 0x18
+#define PLT_INSTRUCTION_OFFSET 0x18
 
 struct hook_function {
     uint8_t* ins;
@@ -96,37 +99,47 @@ uint64_t allocate_remote_memory(pid_t pid) {
     return remote_address;
 }
 
+struct hook_function read_hook(char* filename, char* symbol) {
+    struct buffer file_contents = read_file(filename);
+    struct hook_function hook;
+    hook.ins = file_contents.content;
+    hook.size = file_contents.size;
+    return hook;
+}
+
 struct hook_function look_up_hook_for(char* symbol_name, char** hook_filenames, int hook_filenames_count) {
     size_t symbol_name_len = strlen(symbol_name);
     for (int i = 0; i < hook_filenames_count; i++) {
         char* hook_filename = hook_filenames[i];
         char* hooked_symbol = basename(hook_filename);
         if (strncmp(hooked_symbol, symbol_name, symbol_name_len) == 0) {
-            struct buffer file_contents = read_file(hook_filename);
-            struct hook_function hook;
-            hook.ins = file_contents.content;
-            hook.size = file_contents.size;
-            return hook;
+            return read_hook(hook_filename, hooked_symbol);
         }
     }
     return (struct hook_function) {NULL, 0};
 }
 
-void place_hook(pid_t pid, struct hook_function hook_function, uint64_t base_addr, uint64_t scratch_pad_addr, uint64_t got_entry_addr, char* symbol_name) {
+void place_hook(pid_t pid, struct hook_function hook_function, uint64_t base_addr, uint64_t scratch_pad_addr, uint64_t got_entry_addr, char* symbol_name, struct hook_function* plt_hook_template) {
+    uint64_t plt_hook_base = allocate_remote_memory(pid);
     uint64_t hook_base = allocate_remote_memory(pid);
     printf("Allocated remote memory: %p\n", (void*) hook_base);
 
     unsigned long old_got_pointer_value = read_ulong(pid, got_entry_addr);
     uint64_t plt_entry_addr = base_addr + old_got_pointer_value;
-    uint64_t code_start = hook_base + INSTRUCTION_OFFSET;
+    uint64_t plt_hook_code_start = plt_hook_base + PLT_INSTRUCTION_OFFSET;
+    uint64_t hook_code_start = hook_base + INSTRUCTION_OFFSET;
     printf("PLT entry address: %08lx\n", plt_entry_addr);
 
+    // Prepare PLT hook
+    memcpy(plt_hook_template->ins + PLT_ENTRY_ADDRESS_OFFSET, &plt_entry_addr, sizeof(uint64_t));
+    memcpy(plt_hook_template->ins + GOT_ENTRY_ADDRESS_OFFSET, &got_entry_addr, sizeof(uint64_t));
+    memcpy(plt_hook_template->ins + HOOK_ADDRESS_OFFSET, &hook_code_start, sizeof(uint64_t));
+
     // Patch the global variables which can be used by the hook instructions.
-    memcpy(hook_function.ins + PLT_ENTRY_ADDRESS_OFFSET, &plt_entry_addr, sizeof(uint64_t));
-    memcpy(hook_function.ins + GOT_ENTRY_ADDRESS_OFFSET, &got_entry_addr, sizeof(uint64_t));
-    memcpy(hook_function.ins + HOOK_ADDRESS_OFFSET, &code_start, sizeof(uint64_t));
+    memcpy(hook_function.ins + ORIGINAL_FUNCTION_OFFSET, &plt_hook_code_start, sizeof(uint64_t));
     memcpy(hook_function.ins + SCRATCH_PAD_OFFSET, &scratch_pad_addr, sizeof(uint64_t));
     
+    write_bytes(pid, (void*) plt_hook_base, plt_hook_template->ins, plt_hook_template->size);
     write_bytes(pid, (void*) hook_base, hook_function.ins, hook_function.size);
     free(hook_function.ins);
     printf("Wrote hook into remote process\n");
@@ -143,7 +156,8 @@ void place_hook(pid_t pid, struct hook_function hook_function, uint64_t base_add
     printf("Pwned GOT @(%p) %08lx -> %08lx\n", (void*) got_entry_addr, old_got_pointer_value, new_got_pointer_value);
 }
 
-void patch_got(pid_t pid, struct arguments* arguments, uint64_t base_addr, uint64_t scratch_pad_addr, struct plt_section_info plt, struct str_tab_info str, struct sym_tab_info sym) {
+void patch_got_plt(pid_t pid, struct arguments* arguments, uint64_t base_addr, uint64_t scratch_pad_addr, struct plt_section_info plt, struct str_tab_info str, struct sym_tab_info sym) {
+    struct hook_function plt_hook_template = read_hook("build/hooks/plt_hook.text", NULL);
     unsigned long plt_entry_size = (plt.entry_kind == RELA_MAGIC_VALUE ? sizeof(Elf64_Rela) : sizeof(Elf64_Rel));
     unsigned long plt_count = plt.total_size / plt_entry_size;
     for (int i = 0; i < plt_count; i++) {
@@ -170,9 +184,10 @@ void patch_got(pid_t pid, struct arguments* arguments, uint64_t base_addr, uint6
         struct hook_function hook_function = look_up_hook_for(symbol_name, arguments->hook_filenames, arguments->hook_count);
         if (hook_function.size > 0) {
             uint64_t got_addr = base_addr + rel_offset;
-            place_hook(pid, hook_function, base_addr, scratch_pad_addr, got_addr, symbol_name);
+            place_hook(pid, hook_function, base_addr, scratch_pad_addr, got_addr, symbol_name, &plt_hook_template);
         }
     }
+    free(plt_hook_template.ins);
 }
 
 void perform_hooks_in_child(pid_t pid, struct arguments* arguments ) {
@@ -201,7 +216,7 @@ void perform_hooks_in_child(pid_t pid, struct arguments* arguments ) {
     printf("[str tab] offset: %lu, size: %lu\n", str_tab_info.offset, str_tab_info.size);
     uint64_t scratch_pad_addr = allocate_remote_memory(pid);
     printf("Allocating shared memory at %p\n", (void*) scratch_pad_addr);
-    patch_got(pid, arguments, base_addr, scratch_pad_addr, plt_section_info, str_tab_info, sym_tab_info);
+    patch_got_plt(pid, arguments, base_addr, scratch_pad_addr, plt_section_info, str_tab_info, sym_tab_info);
     printf("All done\n");
     ptrace(PTRACE_DETACH, pid, NULL, NULL);
     waitpid(pid, NULL, 0);

@@ -5,12 +5,8 @@ SECTION .text           ; Code section.
 ; The following dq pseudo-instructions are here to reserve space.
 ; These memory locations will be patched by Xplore such that they contain the correct information
 ; after the hook is injected.
-plt_entry_address:
-    dq 0x0 ; Address of corresponding .plt entry.
-got_entry_address:
-    dq 0x0 ; Address of corresponding .got entry.
-hook_address:
-    dq 0x0 ; Address where this hook is placed.
+original_function_address:
+    dq 0x0 ; Cache where original function address will be stored.
 ; The scratch pad is memory shared between hooks. The memory roughly corresponds with the following c struct:
 ; struct {
 ;   long string_table_length;
@@ -64,8 +60,6 @@ scratch_pad:
     add rdi, rax
     mov rax, [scratch_pad]
     mov [rax], rdi
-    mov rdx, [original_function_address]
-    test rdx,rdx
     ; Restore registers and stack to the original state.
     pop r11
     pop rcx
@@ -73,28 +67,7 @@ scratch_pad:
     pop rsi
     pop rdi
     pop rax
-    jz link_func
-    ; The cached function address is not null, so we can reuse it.
     call [original_function_address]
-    jmp after_call
-link_func:
-    ; The cached function address is null.
-    ; In this case, call the plt entry, which will cause the dynamic linker
-    ; to resolve the address and store it in the corresponding GOT entry.
-    ; After the call, we need to grab the address and replace the address in the GOT entry
-    ; with our address to restore the hook.
-    call [plt_entry_address]
-    push rax
-    push rbx
-    mov rax, [got_entry_address]
-    mov rax, [rax]
-    mov [original_function_address], rax
-    mov rax, [hook_address]
-    mov rbx, [got_entry_address]
-    mov [rbx], rax
-    pop rbx
-    pop rax
-after_call:
     push rax
     push rbx
     push rcx
@@ -188,8 +161,6 @@ print:
     mov rdx, rax
     call write
     ret
-original_function_address:
-    dq 0x0 ; Cache where original function address will be stored.
 local_filename:
     dq 0x0 ; Pointer to the last stored string in the string table.
 str_prologue:
