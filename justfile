@@ -1,6 +1,6 @@
 executable-name := "xplore"
 build-dir := "build"
-build-hooks-dir := build-dir / "hooks"
+build-hooks-dir := build-dir / "hooks" / "assembly"
 src-dir := "src"
 executable-path := build-dir / "bin" / executable-name
 fread-hook := "fread_hook.text"

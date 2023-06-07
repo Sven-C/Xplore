@@ -157,7 +157,7 @@ void place_hook(pid_t pid, struct hook_function hook_function, uint64_t base_add
 }
 
 void patch_got_plt(pid_t pid, struct arguments* arguments, uint64_t base_addr, uint64_t scratch_pad_addr, struct plt_section_info plt, struct str_tab_info str, struct sym_tab_info sym) {
-    struct hook_function plt_hook_template = read_hook("build/hooks/plt_hook.text", NULL);
+    struct hook_function plt_hook_template = read_hook("build/hooks/assembly/plt_hook.text", NULL);
     unsigned long plt_entry_size = (plt.entry_kind == RELA_MAGIC_VALUE ? sizeof(Elf64_Rela) : sizeof(Elf64_Rel));
     unsigned long plt_count = plt.total_size / plt_entry_size;
     for (int i = 0; i < plt_count; i++) {
