@@ -14,6 +14,7 @@
 
 #include "elf_utils.h"
 #include "inject.h"
+#include "io_utils.h"
 #include "remote.h"
 
 #define INSTRUCTION_OFFSET 0x20
@@ -101,26 +102,11 @@ struct hook_function look_up_hook_for(char* symbol_name, char** hook_filenames, 
         char* hook_filename = hook_filenames[i];
         char* hooked_symbol = basename(hook_filename);
         if (strncmp(hooked_symbol, symbol_name, symbol_name_len) == 0) {
-            struct hook_function result;
-            struct stat st;
-            stat(hook_filename, &st);
-            result.size = st.st_size;
-            result.ins = malloc(result.size);
-            printf("Loading hook %s (%ld bytes) %s\n", hooked_symbol, st.st_size, hook_filename);
-            size_t copied = 0;
-            FILE* hook_file = fopen(hook_filename, "r");
-            if (!hook_file) {
-                printf("Failed to open %s (error %d: %s)\n", hook_filename, errno, strerror(errno));
-                exit(1);
-            }
-            while (!feof(hook_file) && !ferror(hook_file)) {
-                copied += fread(result.ins + copied, sizeof(uint8_t), result.size, hook_file);
-            }
-            if (ferror(hook_file)) {
-                printf("Error while reading %s (error %d: %s)\n", hook_filename, ferror(hook_file), strerror(ferror(hook_file)));
-            }
-            printf("Read %ld bytes from disk\n", copied);
-            return result;
+            struct buffer file_contents = read_file(hook_filename);
+            struct hook_function hook;
+            hook.ins = file_contents.content;
+            hook.size = file_contents.size;
+            return hook;
         }
     }
     return (struct hook_function) {NULL, 0};
