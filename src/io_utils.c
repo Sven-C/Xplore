@@ -26,6 +26,7 @@ struct buffer read_file(char* filename) {
     }
     if (ferror(file)) {
         printf("Error while reading %s (error %d: %s)\n", filename, ferror(file), strerror(ferror(file)));
+        exit(1);
     }
     printf("Read %ld bytes from %s\n", copied, filename);
     return buffer;
