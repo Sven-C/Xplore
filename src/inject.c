@@ -178,6 +178,13 @@ void patch_got_plt(pid_t pid, struct arguments* arguments, uint64_t base_addr, u
     free(plt_hook_template.ins);
 }
 
+uint64_t inject_shared_object(pid_t pid, char* filename) {
+    struct buffer shared_object_contents = read_file(filename);
+    uint64_t shared_object_base_address = allocate_remote_memory(pid, shared_object_contents.size);
+    write_bytes(pid, (void*) shared_object_base_address, shared_object_contents.content, shared_object_contents.size);
+    return shared_object_base_address;
+}
+
 void perform_hooks_in_child(pid_t pid, struct arguments* arguments ) {
     do_wait(pid);
     printf("Preparing hooks\n");

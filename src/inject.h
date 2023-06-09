@@ -7,6 +7,7 @@
 
 #include "arguments.h"
 
+uint64_t inject_shared_object(pid_t pid, char* filename);
 void perform_hooks_in_child(pid_t pid, struct arguments* arguments);
 
 #endif
