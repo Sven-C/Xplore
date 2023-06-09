@@ -53,7 +53,10 @@ void singlestep(pid_t pid) {
     do_wait(pid);
 }
 
-uint64_t allocate_remote_memory(pid_t pid) {
+uint64_t allocate_remote_memory(pid_t pid, size_t size) {
+    if (size == 0) {
+        size = PAGE_SIZE;
+    }
     // read current regs and prepare mmap regs
     struct user_regs_struct old_regs = read_regs(pid);
     long old_ins_data = read_long(pid, old_regs.rip);
@@ -61,7 +64,7 @@ uint64_t allocate_remote_memory(pid_t pid) {
     memmove(&mmap_regs, &old_regs, sizeof(struct user_regs_struct));
     mmap_regs.rax = SYS_mmap;
     mmap_regs.rdi = 0x0;
-    mmap_regs.rsi = PAGE_SIZE;
+    mmap_regs.rsi = size;
     mmap_regs.rdx = PROT_READ | PROT_WRITE | PROT_EXEC;
     mmap_regs.r10 = MAP_PRIVATE | MAP_ANONYMOUS;
     mmap_regs.r8 = -1;
@@ -105,8 +108,8 @@ struct hook_function look_up_hook_for(char* symbol_name, char** hook_filenames, 
 }
 
 void place_hook(pid_t pid, struct hook_function hook_function, uint64_t base_addr, uint64_t scratch_pad_addr, uint64_t got_entry_addr, char* symbol_name, struct hook_function* plt_hook_template) {
-    uint64_t plt_hook_base = allocate_remote_memory(pid);
-    uint64_t hook_base = allocate_remote_memory(pid);
+    uint64_t plt_hook_base = allocate_remote_memory(pid, plt_hook_template->size);
+    uint64_t hook_base = allocate_remote_memory(pid, hook_function.size);
     printf("Allocated remote memory: %p\n", (void*) hook_base);
 
     unsigned long old_got_pointer_value = read_ulong(pid, got_entry_addr);
@@ -199,7 +202,7 @@ void perform_hooks_in_child(pid_t pid, struct arguments* arguments ) {
         exit(1);
     }
     printf("[str tab] offset: %lu, size: %lu\n", str_tab_info.offset, str_tab_info.size);
-    uint64_t scratch_pad_addr = allocate_remote_memory(pid);
+    uint64_t scratch_pad_addr = allocate_remote_memory(pid, PAGE_SIZE);
     printf("Allocating shared memory at %p\n", (void*) scratch_pad_addr);
     patch_got_plt(pid, arguments, base_addr, scratch_pad_addr, plt_section_info, str_tab_info, sym_tab_info);
     printf("All done\n");
