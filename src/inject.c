@@ -35,29 +35,14 @@ uint64_t get_base_addr(pid_t pid) {
     char child_mem_maps_filename[50];
     memset(child_mem_maps_filename, '\0', sizeof(child_mem_maps_filename));
     snprintf(child_mem_maps_filename, sizeof(child_mem_maps_filename) - 1, "/proc/%d/maps", pid);
-    printf("Opening %s\n", child_mem_maps_filename);
-    FILE* mem_maps = fopen(child_mem_maps_filename, "r");
-    char line[48];
-    size_t expected_count = (sizeof(line) - 1)/sizeof(char);
-    size_t read = 0;
-    char* end = NULL;
-    clearerr(mem_maps);
-    do {
-        size_t just_read = fread(line, sizeof(char), expected_count, mem_maps);
-        if (ferror(mem_maps)) {
-            printf("Error: Failed to read %s\n", child_mem_maps_filename);
-        }
-        if (feof(mem_maps)) {
-            printf("Warning: Unexpected EOF while reading %s\n", child_mem_maps_filename);
-        }
-        read += just_read;
-        end = strstr(line, "-");
-    } while (read < expected_count && end == NULL);
-    fclose(mem_maps);
-    if (!end) {
-        printf("Warning: '-' not found while parsing base address\n");
+    struct buffer file_contents = read_file(child_mem_maps_filename);
+    char* end = strstr((const char*) file_contents.content, "-");
+    if (end == NULL) {
+        printf("Warning: '-' not found while parsing base address");
     }
-    return strtoull(line, &end, 16);
+    uint64_t base_address = strtoull((const char*) file_contents.content, &end, 16);
+    free(file_contents.content);
+    return base_address;
 }
 
 void singlestep(pid_t pid) {
